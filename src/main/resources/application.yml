@@ -1,7 +1,6 @@
 
 tcpServer:
-    serverIP: 101.132.137.153 #服务端IP,该参数是给客户端用的
-    #serverIP: 127.0.0.1 #服务端IP,该参数是给客户端用的
+    serverIP: 127.0.0.1 #服务端IP,该参数是给客户端用的
     serverPort: 3737    #服务端监听的聊天端口
     filePort: 3939      #服务端监听的文件传输端口
     refreshInterval: 5  #服务器刷新客户端状态的周期
