@@ -1,0 +1,127 @@
+package com.godo.playChat.client;
+
+import java.io.IOException;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.net.Socket;
+import java.net.SocketException;
+import java.util.Map;
+import java.util.Scanner;
+
+import com.godo.playChat.common.utils.RSAUtils;
+import com.godo.playChat.common.utils.message.ChatMess;
+import com.godo.playChat.common.utils.message.ExchangeMess;
+import com.godo.playChat.common.utils.socket.SecSocket;
+import com.godo.playChat.common.utils.socket.SocketReceive;
+import com.godo.playChat.common.utils.socket.SocketSend;
+
+public class TcpClient  {
+    
+    private static final String serverIP   = "127.0.0.1";
+    private static final int serverPORT    = 3434;
+    private final static Map<String, Object> keyPair   = RSAUtils.genKeyPair();
+    private final static String clientPublicKey  = RSAUtils.getPublicKey(keyPair);
+    private final static String clientPrivateKey = RSAUtils.getPrivateKey(keyPair);
+    private static String shareKey = null;
+
+    private static String initSecureSocket(Socket socket) {
+        // set Read TimeOut
+        try {
+            socket.setSoTimeout(60000);
+            
+        } catch (SocketException e1) {
+            // TODO Auto-generated catch block
+            e1.printStackTrace();
+        }
+        
+        ObjectOutputStream  writeMsg = null;
+        ObjectInputStream   readMsg  = null;
+        try{
+            int i = 0;
+            while(i<3) {
+
+                i++;
+                Thread.sleep(100);
+                // Send 1
+                writeMsg = new ObjectOutputStream(socket.getOutputStream());
+                ExchangeMess sendMsg1 = new ExchangeMess("syn-publicKey", clientPublicKey);
+                writeMsg.writeObject(sendMsg1);
+                
+                // Receive 1
+                readMsg =  new ObjectInputStream(socket.getInputStream());
+                ExchangeMess receiveMsg1 = (ExchangeMess)readMsg.readObject();
+                String cmd1 = receiveMsg1.getCmd();
+                if(!cmd1.contentEquals("ack-publicKey")) {
+                    continue;
+                }
+                String publicKey = receiveMsg1.getPublicKey();
+                byte[] testMsg   = receiveMsg1.getTestMsg();
+                String shareKey = new String(
+                                    RSAUtils.decryptByPrivateKey(testMsg, clientPrivateKey));
+                
+                // Send 2
+                ExchangeMess sendMsg2 = new ExchangeMess("ack-testMsg", null);
+                byte[] enTestMsg = RSAUtils.encryptByPublicKey(shareKey.getBytes(), publicKey);
+                sendMsg2.setTestMsg(enTestMsg);
+                writeMsg.writeObject(sendMsg2);
+       
+                // Receive 2
+                ExchangeMess receiveMsg2 = (ExchangeMess)readMsg.readObject();
+                String cmd2 = receiveMsg2.getCmd();
+                if (cmd2.contentEquals("ack-testMsg-ok")) {
+                    socket.setSoTimeout(0);
+                    return shareKey;
+                }
+                
+            }
+            
+        } catch (IOException e) {
+            
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (ClassNotFoundException e) {
+            // TODO Auto-generated catch block
+            // 对象消息解析错误
+            //e.printStackTrace();
+            System.out.println("exchange publicKey failed!");
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        
+        return null;
+    }
+    
+    public static void start() {
+
+        try {
+            Socket socket = new Socket(serverIP, serverPORT);
+            shareKey = initSecureSocket(socket);
+            if (shareKey != null) {
+                System.out.println("Client Open SecureSocket");
+            }else {
+                System.out.println("Client Do Not Open SecureSocket");
+            }
+            
+            SecSocket<ChatMess> sSocket = new SecSocket<ChatMess>(shareKey, socket, ChatMess.class);
+    
+            Thread tSend    = new Thread(new SocketSend(sSocket));
+            Thread tReceive = new Thread(new SocketReceive(sSocket));
+            tSend.start();
+            tReceive.start();
+            tSend.join();
+            tReceive.join();
+            
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            //e.printStackTrace();
+            System.out.println("Connection refused: (serverIP: " + serverIP +" || serverPORT: " + serverPORT + ")");
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }finally {
+            System.out.println("Client exit...");
+        }
+    }
+
+}

@@ -1,0 +1,40 @@
+package com.godo.playChat;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+import com.godo.playChat.client.TcpClient;
+import com.godo.playChat.server.TcpServer;
+
+@SpringBootApplication
+public class PlayChatApplication {
+
+	public static void main(String[] args) {
+	    
+		SpringApplication.run(PlayChatApplication.class, args);
+		
+		if (args.length <= 0) {
+		    showUsage();
+		    return;
+        }
+		
+		if (args[0].contentEquals("-server")) {
+	        System.out.println("ChatServer Start...");
+	        TcpServer.start();
+        }else if (args[0].contentEquals("-client")) {
+            System.out.println("ChatClient Start...");
+            TcpClient.start();
+        }else {
+            showUsage();
+            return;
+        }
+	}
+	
+	private static void showUsage() {
+	    
+        System.out.println("Usage:");
+        System.out.println("  java playChat -server");
+        System.out.println("  java playChat -client");
+	}
+
+}

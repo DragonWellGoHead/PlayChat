@@ -1,0 +1,44 @@
+package com.godo.playChat.common.utils.socket;
+
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Scanner;
+
+import com.godo.playChat.common.utils.message.ChatMess;
+
+public class SocketReceive implements Runnable{
+    
+    private SecSocket<ChatMess> sSocket;
+    
+    public SocketReceive(SecSocket<ChatMess> socket) {
+        this.sSocket = socket;
+    }
+
+    @Override
+    public void run() {
+        
+        while(!sSocket.isClosed()) {
+            
+            ChatMess chatMess = sSocket.readMsg();
+            if (chatMess == null) {
+                continue;
+            }
+            String msg = chatMess.getMsg();
+            String from = chatMess.getFrom();
+            String fromIP = chatMess.getFromIP();
+            SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+            Date time = chatMess.getTime();
+            
+            String  timeStamp = time != null?sdf.format(time):"---";
+            System.out.println(from + "("+fromIP+")" + timeStamp + " : \n" + msg);
+//            System.out.println(from + " " + " : " + msg);
+            
+        }
+  
+    }
+    
+}
+
+    
+    
+

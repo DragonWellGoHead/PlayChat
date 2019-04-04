@@ -1,0 +1,48 @@
+package com.godo.playChat.common.utils.message;
+
+import java.io.Serializable;
+import java.util.Arrays;
+
+public  class ExchangeMess implements Serializable{
+    
+    private static final long serialVersionUID = 1L;
+    
+    private String cmd;
+    private String publicKey;
+    private byte[] testMsg;
+    
+    public ExchangeMess(String cmd, String publicKey) {
+        
+        this.cmd = cmd;
+        this.publicKey = publicKey;
+    }
+
+    public String getCmd() {
+        return cmd;
+    }
+
+    public String getPublicKey() {
+        return publicKey;
+    }
+
+    public void setCmd(String cmd) {
+        this.cmd = cmd;
+    }
+
+    public void setPublicKey(String publicKey) {
+        this.publicKey = publicKey;
+    }
+
+    public byte[] getTestMsg() {
+        return testMsg;
+    }
+
+    public void setTestMsg(byte[] testMsg) {
+        this.testMsg = testMsg;
+    }
+
+
+
+
+    
+}

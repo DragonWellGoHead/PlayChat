@@ -1,0 +1,611 @@
+package com.godo.playChat.server;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.io.PrintWriter;
+import java.io.Serializable;
+import java.net.InetAddress;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.net.SocketException;
+import java.text.SimpleDateFormat;
+import java.util.ArrayList;
+import java.util.Date;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.LinkedList;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Queue;
+import java.util.Scanner;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.regex.Pattern;
+
+import com.godo.playChat.common.utils.RSAUtils;
+import com.godo.playChat.common.utils.message.ChatMess;
+import com.godo.playChat.common.utils.message.ExchangeMess;
+import com.godo.playChat.common.utils.socket.SecSocket;
+import com.godo.playChat.common.utils.socket.SocketReceive;
+import com.godo.playChat.common.utils.socket.SocketSend;
+
+import ch.qos.logback.core.net.ssl.SSL;
+
+public class TcpServer {
+    
+    private static Map<String, Client> clientList  = new ConcurrentHashMap<String, Client>();
+    private final static  String defaultPwd  = "JustDoItGo";
+    private final static  int serverPort = 3434;
+   
+    private final static  Map<String, Object> keyPair   = RSAUtils.genKeyPair();
+    private final static  String serverPublicKey        = RSAUtils.getPublicKey(keyPair);
+    private final static  String serverPrivateKey       = RSAUtils.getPrivateKey(keyPair);
+    
+    private static class Client {
+        
+        private String name;
+        private String shareKey;
+        private int  state = 0;
+        private Date   loginTime;
+        private Date   logoutTime;
+        private SecSocket<ChatMess> sSocket;
+        private Queue msgQueue = new LinkedList<ChatMess>();//消息队列，用于保存离线消息。
+        
+        public Client(String name, String shareKey, SecSocket<ChatMess> socket) {
+            this.name = name;
+            this.shareKey = shareKey;
+            this.sSocket = socket;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public String getShareKey() {
+            return shareKey;
+        }
+
+        public SecSocket<ChatMess> getsSocket() {
+            return sSocket;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public void setShareKey(String shareKey) {
+            this.shareKey = shareKey;
+        }
+
+        public void setsSocket(SecSocket<ChatMess> sSocket) {
+            this.sSocket = sSocket;
+        }
+
+        public int getState() {
+            return state;
+        }
+
+        public void setState(int state) {
+            this.state = state;
+        }
+
+        public Date getLoginTime() {
+            return loginTime;
+        }
+
+        public void setLoginTime(Date loginTime) {
+            this.loginTime = loginTime;
+        }
+
+        public Date getLogoutTime() {
+            return logoutTime;
+        }
+
+        public void setLogoutTime(Date logoutTime) {
+            this.logoutTime = logoutTime;
+        }
+
+        public Queue getMsgQueue() {
+            return msgQueue;
+        }
+
+        public void setMsgQueue(Queue msgQueue) {
+            this.msgQueue = msgQueue;
+        }
+
+    }
+    
+    private static class ServerSend implements Runnable {
+
+        private SecSocket<ChatMess> sSocket;
+        private Client  client;
+        public  ServerSend(SecSocket<ChatMess> sSocket, Client client) {
+            this.sSocket = sSocket;
+            this.client  = client;        
+        }
+        
+        
+        @Override
+        public void run() {
+            while(true) {
+                synchronized (client.getMsgQueue()) {
+                    while(client.getMsgQueue().isEmpty() || sSocket.isClosed()) {
+                        try {
+                            client.getMsgQueue().wait();
+                        } catch (InterruptedException e) {
+                            // TODO Auto-generated catch block
+                            e.printStackTrace();
+                        }
+                    }
+                    ChatMess chatMess = (ChatMess) client.getMsgQueue().remove();
+                    sSocket.writeMsg(chatMess);
+                    client.getMsgQueue().notifyAll();
+                }
+                
+            }
+            
+            
+        }
+        
+    }
+    
+    
+    private static  class ServerReceive implements Runnable{
+
+        private  SecSocket<ChatMess> sSocket;
+        private  Client client;
+        public  ServerReceive(SecSocket<ChatMess> sSocket, Client client) {
+            this.sSocket = sSocket;
+            this.client  = client;
+        }
+        
+        @Override
+        public void run() {
+            
+            while(!sSocket.isClosed()) {
+                
+                ChatMess chatMess = (ChatMess) sSocket.readMsg();
+                if (chatMess == null) {
+                    continue;
+                }
+                String orderStr = chatMess.getMsg().replaceAll("\t|\r|\n", "").trim();
+                System.out.println(orderStr);
+                switch (orderStr) {
+                    case "help":
+                        ChatMess helpMsg = new ChatMess("txt",showHelp());
+                        helpMsg.setFrom("Server");
+                        helpMsg.setFromIP("ServerIP");
+                        helpMsg.setTime(new Date());
+                        sSocket.writeMsg(helpMsg);
+                        break;
+                    case "list":
+                        ChatMess listMsg = new ChatMess("txt",showAllUser());
+                        listMsg.setFrom("Server");
+                        listMsg.setFromIP("ServerIP");
+                        listMsg.setTime(new Date());
+                        sSocket.writeMsg(listMsg);
+                        break;
+                    default:
+                        int separatorIndex = orderStr.indexOf(":");
+                        String userName;
+                        String msg;
+                        String filePath;
+                        String from = client.getName();
+                        String fromIP = sSocket.getIP();
+                        if(separatorIndex > 3) {
+                            userName = orderStr.substring(1, separatorIndex);
+                        }else {
+                            break;
+                        }
+                        if (orderStr.startsWith("@")) {
+                         // Send message
+                            msg = orderStr.substring(separatorIndex+1); 
+                            if(msg != null) {
+                                sendMsg(from, fromIP, userName, msg);
+                            }
+                            
+                        }else if(orderStr.startsWith("#")) {
+                         // Send file
+                            filePath = orderStr.substring(separatorIndex+1);
+                            if (filePath != null) {
+//                                sendFile(from, fromIP, userName, filePath);
+                            }
+                        }
+                        break;
+                }
+            }
+   
+        }
+        
+    }
+    
+    public static class RefreshClientList implements Runnable{
+
+        private Map<String,Client> clientList;
+        
+        public  RefreshClientList(Map<String,Client> clientList) {
+            // TODO Auto-generated constructor stub
+            this.clientList = clientList;
+        }
+        
+        @Override
+        public void run() {
+            // TODO Auto-generated method stub
+
+            
+            while(true) {
+                try {
+                    Thread.sleep(5*1000);
+                } catch (InterruptedException e) {
+                    // TODO Auto-generated catch block
+                    e.printStackTrace();
+                }
+                System.out.println("Refresh User List");
+                if (clientList.size() == 0) {
+                    continue;
+                }
+                Iterator iterator = clientList.entrySet().iterator();
+                while(iterator.hasNext()) {
+                    Map.Entry<String, Client> entry = (Entry<String, Client>) iterator.next();
+                    Client client = entry.getValue();
+                    int state = client.getState();
+                    if (client.sSocket.isClosed()) {
+                        if(state != 0) {
+                            client.setState(0);
+                            client.setLogoutTime(new Date()); 
+                        }
+                    }else {
+                        if(state == 0) {
+                            client.setState(1);
+                            client.setLoginTime(new Date());
+                        }
+                    }
+                }
+            }
+        }
+        
+    } 
+    
+    private static String showHelp() {
+        
+        StringBuilder sb = new StringBuilder();
+        sb.append("===========Help=============\n");
+        sb.append("COMMAND             DESC\n");
+        sb.append("help                --show help"+ "\n");
+        sb.append("list                --show all online user"+ "\n");
+        sb.append("@user:msg           --send msg to user"+ "\n");
+        sb.append("@ALL:msg            --send msg to all user"+ "\n");
+        sb.append("#user:filepath      --send file to user"+ "\n");
+        sb.append("#ALL:filepath       --send file to all user"+ "\n");
+        sb.append("============================"+ "\n");
+        
+        return sb.toString();
+    }
+    
+    public static void sendFile(String from, String fromIP, String userName, String filePath) {
+        // TODO Auto-generated method stub
+
+        
+    }
+
+    public static void sendMsg(String from, String fromIP, String userName, String msg) {
+        // TODO Auto-generated method stub
+        if (userName.contentEquals("ALL")) {
+            Iterator  iterator = clientList.entrySet().iterator();
+            while(iterator.hasNext()) {
+                Map.Entry<String, Client> entry = (Entry<String, Client>) iterator.next();
+                Client client = entry.getValue();
+                SecSocket<ChatMess> sSocket = client.getsSocket();
+                ChatMess chatMess = new ChatMess("txt",msg);
+                chatMess.setFrom(from);
+                chatMess.setFromIP(fromIP);
+                chatMess.setTime(new Date());
+                new Thread() {
+                    public void run() {
+                        synchronized (client.getMsgQueue()) {
+                            client.getMsgQueue().add(chatMess);
+                            client.getMsgQueue().notifyAll();
+                        }
+                    }
+                }.start();
+//                sSocket.writeMsg(chatMess);
+            }
+        }else {
+            Set<String> keySet = clientList.keySet();
+            if (keySet.contains(userName)) {
+                Client client = clientList.get(userName);
+                SecSocket<ChatMess> sSocket = client.getsSocket();
+                ChatMess chatMess = new ChatMess("txt", msg);
+                chatMess.setFrom(from);
+                chatMess.setFromIP(fromIP);
+                chatMess.setTime(new Date());
+                new Thread() {
+                    public void run() {
+                        synchronized (client.getMsgQueue()) {
+                            client.getMsgQueue().add(chatMess);
+                            client.getMsgQueue().notifyAll();
+                        }
+                    }
+                }.start();
+
+                
+//                sSocket.writeMsg(chatMess);
+                
+            }
+        }
+    }
+
+    private static String showAllUser() {
+        
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+        StringBuilder sb = new StringBuilder();
+        
+        sb.append("===========User List============="+ "\n");
+        sb.append("UserName     State       IP          loginTime                   logoutTime\n");
+        Iterator iterator = clientList.entrySet().iterator();
+        while (iterator.hasNext()) {
+            Map.Entry<String, Client> entry = (Entry<String, Client>) iterator.next();
+            Client client = entry.getValue();
+            String state = client.getState()>0?"on-line":"off-line";
+            String loginTime  = sdf.format(client.getLoginTime());
+            String logoutTime = client.getLogoutTime()!=null?sdf.format(client.getLogoutTime()):"---";
+            sb.append(client.getName() + "      " + state  + "      " + client.getsSocket().getIP() +"      " + loginTime  + "          " + logoutTime + "\n");
+        }
+        sb.append("================================="+ "\n");
+        return sb.toString();
+        
+    }
+    
+    
+    
+    private static void clientDispacher(Socket socket) {
+        
+        new Thread() {
+            public void run() {
+                try {
+                    String shareKey = initSecureSocket(socket);
+                    if (shareKey != null) {
+                        System.out.println("Server  Open SecureSocket");
+                    }else {
+                        System.out.println("Server Do Not Open SecureSocket");
+                        return;
+                    }
+                    SecSocket<ChatMess> sSocket = new SecSocket<ChatMess>(shareKey, socket,  ChatMess.class);
+                    sendLoginTips(sSocket,null);
+                    
+                    ChatMess chatMess;
+                    int i = 0;
+                    while(i<3 && ((chatMess = (ChatMess) sSocket.readMsg()) != null)) {
+
+                        i++;
+                        
+                        String msg = chatMess.getMsg();
+                        msg = msg.replaceAll("\t|\r|\n", "");
+                        
+                        // check whether or not to include "="
+                        if (!msg.contains("=")) {
+                            String tips = "the user name and password are not in "
+                                    + " the correct format";
+                            sendLoginTips(sSocket,tips);
+                            continue;
+                        }
+                        
+                        // check the length and type
+                        String[] userPwd  = msg.split("=", 2);
+                        userPwd[0] = userPwd[0].trim();
+                        userPwd[1] = userPwd[1].trim();
+     
+                        System.out.println("UserName:" + userPwd[0]);
+                        System.out.println("UserPasswd:" + userPwd[1]);
+                        
+                        String  regex   = "^[a-zA-Z0-9]{5,15}$";
+                        if(!Pattern.matches(regex, userPwd[0]) || !Pattern.matches(regex, userPwd[1])) {
+                    
+                            String tips = "UserName or PassWord must is letter or number \n"
+                                    + "and the length must between 5 and 15";
+                            sendLoginTips(sSocket, tips);
+                            continue;
+                        }
+                        
+                        // check password
+                        if(userPwd[1].contentEquals(defaultPwd)) {
+                            
+                            Client client = loginSuccess(userPwd[0], shareKey, sSocket);
+                            Thread serverSender   = new Thread(new ServerSend(sSocket, client));
+                            Thread serverReceiver = new Thread(new ServerReceive(sSocket, client));
+                            serverSender.start();
+                            serverReceiver.start();
+                            break;
+                        }else {
+                            sendLoginTips(sSocket, null);
+                            continue;
+                        }
+                    }
+                    if (i > 3) {
+                        sSocket.close();
+                    }
+                    
+                    
+                } catch (Exception e) {
+                    // TODO: handle exception
+                    e.printStackTrace();
+                }
+            }
+            
+        }.start();
+    }
+    
+    private static Client loginSuccess(String name, String shareKey, SecSocket<ChatMess> sSocket) {
+        Client client = new Client(name, shareKey, sSocket);
+        client.setState(1);
+        client.setLoginTime(new Date());
+        // 判断是否登录过
+        if (clientList.keySet().contains(name)) {
+            client.setMsgQueue(clientList.get(name).getMsgQueue());
+        }
+        clientList.put(name, client);
+        ChatMess chatMess = new ChatMess("txt", "login success!\n");
+        chatMess.setFrom("Server");
+        chatMess.setFromIP("ServerIP");
+        chatMess.setTime(new Date());
+        sSocket.writeMsg(chatMess);
+        return client;
+    }
+    
+    private static String initSecureSocket(Socket socket) {
+        // set Read TimeOut
+        try {
+            socket.setSoTimeout(60000);
+            
+        } catch (SocketException e1) {
+            e1.printStackTrace();
+        }
+        
+        ObjectInputStream   readMsg  = null;
+        ObjectOutputStream  writeMsg = null;
+        try {
+            
+            int i = 0;
+            while(i<3) {
+                
+                i++;
+                Thread.sleep(100);
+                
+                // Receive 1
+                readMsg = new ObjectInputStream(socket.getInputStream());
+                ExchangeMess receiveMsg1 = (ExchangeMess)readMsg.readObject();
+                String cmd1 = receiveMsg1.getCmd();
+                String publicKey = receiveMsg1.getPublicKey();
+                if (!cmd1.contentEquals("syn-publicKey")) {
+                    continue;
+                }
+                
+                // Send 1
+                writeMsg = new ObjectOutputStream(socket.getOutputStream());
+                String shareKey      = UUID.randomUUID().toString().replace("-", "");
+                byte[] enTestMsg    = RSAUtils.encryptByPublicKey(shareKey.getBytes(), publicKey);
+                ExchangeMess sendMsg1 = new ExchangeMess("ack-publicKey", serverPublicKey);
+                sendMsg1.setTestMsg(enTestMsg);
+                writeMsg.writeObject(sendMsg1);
+                
+                // Receive 2
+                ExchangeMess receiveMsg2 = (ExchangeMess)readMsg.readObject();
+                String cmd2 = receiveMsg2.getCmd();
+                if(!cmd2.contentEquals("ack-testMsg")) {
+                    continue;
+                }
+                
+                byte[] deTestMsg = RSAUtils.decryptByPrivateKey(receiveMsg2.getTestMsg(), serverPrivateKey);
+                String deTestMsgString = new String(deTestMsg);
+                if(deTestMsgString.contentEquals(shareKey)) {
+                    
+                    // Success Send 2
+                    ExchangeMess sendMsg2 = new ExchangeMess("ack-testMsg-ok", null);
+                    writeMsg.writeObject(sendMsg2);
+                    
+                    socket.setSoTimeout(0);
+                    return shareKey;
+                }else {
+                    // Failed Send 2
+                    ExchangeMess sendMsg2 = new ExchangeMess("ack-testMsg-err", null);
+                    writeMsg.writeObject(sendMsg2);
+                }
+            }
+            
+        } catch (IOException e) {
+            
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        } catch (ClassNotFoundException e) {
+            // TODO Auto-generated catch block
+            // 对象消息解析错误
+            //e.printStackTrace();
+            System.out.println("exchange publicKey failed!");
+        } catch (InterruptedException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+        
+        return null;
+        
+    }
+    
+    private static void sendLoginTips(SecSocket<ChatMess> secSocket, String tips) {
+        StringBuffer msg = new StringBuffer();
+        if (tips != null) {
+//            msg.append("=================================\n"+"Tips:\n" + tips + 
+//                      "\n=================================\n");
+            msg.append("===============\n"+"Tips:\n" + tips + 
+                     "\n===============\n");
+        }
+        
+        msg.append("Hello,please input username and password.\n" +
+                "(eg: JackMa=123456):\n");
+        
+        ChatMess chatMess = new ChatMess("txt", msg.toString());
+        chatMess.setFrom("Server");
+        chatMess.setFromIP("ServerIP");
+        chatMess.setTime(new Date());
+        secSocket.writeMsg(chatMess);  
+    } 
+    
+    private static void transmitMess(Socket socket) {
+        
+        new Thread() {
+            private Scanner scan;
+            public void run() {
+                try {
+                    InputStream is = socket.getInputStream();
+                    scan =  new Scanner(is);
+                    socket.getOutputStream().write("connected success\n".getBytes());;
+                    
+                } catch (Exception e) {
+                    // TODO: handle exception
+                    e.printStackTrace();
+                }
+                
+                while(true) {
+                    String text = scan.nextLine() + "\n";
+//                    for(Socket client : clients) {
+//                        try {
+//                            OutputStream out = client.getOutputStream();
+//                            out.write(text.getBytes());
+//                            out.flush();
+//                        } catch (Exception e) {
+//                            // TODO: handle exception
+//                            e.printStackTrace();
+//                        }
+//                    }
+                }
+            }
+            
+        }.start();
+    }
+    
+    public static void start(){
+ 
+        // refresh clientList
+        Thread refreshClientList = new Thread(new RefreshClientList(clientList));
+        refreshClientList.start();
+        
+        ServerSocket  serverSock;
+        try {
+            serverSock = new ServerSocket(serverPort);
+            while(true) {
+                Socket socket = serverSock.accept();
+                clientDispacher(socket);
+            }
+            
+        } catch (IOException e) {
+            // TODO Auto-generated catch block
+            e.printStackTrace();
+        }
+    }
+}

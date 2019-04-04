@@ -1,0 +1,56 @@
+package com.godo.playChat;
+
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+import com.godo.playChat.client.TcpClient;
+import com.godo.playChat.server.TcpServer;
+
+@SpringBootApplication
+//@EnableAutoConfiguration  //不使用自动配置特性
+//@ComponentScan
+public class PlayChatApplication implements CommandLineRunner {
+
+
+	public static void main(String[] args) {
+	    
+		SpringApplication.run(PlayChatApplication.class, args);
+	}
+	
+    @Autowired
+    private  TcpServer tcpServer;
+    
+    @Autowired
+    private  TcpClient tcpClient;
+    
+    private static  void showUsage() {
+        
+        System.out.println("Usage:");
+        System.out.println("  java playChat -server");
+        System.out.println("  java playChat -client");
+    }
+    
+    
+    @Override
+    public void run(String... args) throws Exception {
+        
+        if (args.length <= 0) {
+            showUsage();
+            return;
+        }
+        
+        if (args[0].contentEquals("-server")) {
+            System.out.println("ChatServer Start...");
+            tcpServer.start();
+        }else if (args[0].contentEquals("-client")) {
+            System.out.println("ChatClient Start...");
+            tcpClient.start();
+        }else {
+            showUsage();
+            return;
+        }
+    }
+
+}

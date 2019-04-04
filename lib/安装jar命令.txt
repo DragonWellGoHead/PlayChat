@@ -1,0 +1,29 @@
+参考：
+https://www.cnblogs.com/zeng1994/p/7486330.html
+
+方法1： 使用eclipse安装jar包
+
+方法2： 使用命令安装jar包
+1
+安装指定文件到本地仓库命令：mvn install:install-file
+2
+-DgroupId=<groupId>       : 设置项目代码的包名(一般用组织名)
+3
+-DartifactId=<artifactId> : 设置项目名或模块名 
+4
+-Dversion=1.0.0           : 版本号
+5
+-Dpackaging=jar           : 什么类型的文件(jar包)
+6
+-Dfile=<myfile.jar>       : 指定jar文件路径与文件名(同目录只需文件名)
+7
+安装命令实例：
+8
+mvn install:install-file -DgroupId=com.baidu -DartifactId=ueditor -Dversion=1.0.0 -Dpackaging=jar -Dfile=ueditor-1.1.2.jar
+mvn  install:install-file -DgroupId=it.sauronsoftware -DartifactId=javabase64 -Dversion=1.3.1 -Dpackaging
+=jar -Dfile=D:\DAY_ADD\TOOLS\Java\doc\practice\playChat\lib\javabase64-1.3.1.jar -e
+
+
+错误解决：
+https://blog.csdn.net/u010886217/article/details/82946884
+mvn  install:install-file "-DgroupId=it.sauronsoftware" "-DartifactId=javabase64" "-Dversion=1.3.1" "-Dpackaging=jar" "-Dfile=D:\DAY_ADD\TOOLS\Java\doc\practice\playChat\lib\javabase64-1.3.1.jar" -e

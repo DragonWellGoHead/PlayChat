@@ -1,0 +1,15 @@
+
+tcpServer:
+    serverIP: 101.132.137.153 #服务端IP,该参数是给客户端用的
+    #serverIP: 127.0.0.1 #服务端IP,该参数是给客户端用的
+    serverPort: 3737    #服务端监听的聊天端口
+    filePort: 3939      #服务端监听的文件传输端口
+    refreshInterval: 5  #服务器刷新客户端状态的周期
+    maxUsers: 100        #服务器能注册的最大用户数
+    defaultPwd: goahead #所有用户的公用密码，只有输入这个密码的用户才能登陆成功
+    baseStorePath: "./serverFileStore" #服务端存储离线文件的目录
+    threadPool:
+        maxThreads: 5  #服务端接收请求的最大线程数
+
+tcpClient:
+    baseStorePath: "./clientFileStore"  #客户端存储下载文件的目录

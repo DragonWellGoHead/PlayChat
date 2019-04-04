@@ -1,0 +1,44 @@
+package com.godo.playChat.common.utils.socket;
+
+import java.util.Date;
+import java.util.Scanner;
+
+import com.godo.playChat.common.utils.message.ChatMess;
+
+public class SocketSend implements Runnable{
+
+    private SecSocket<ChatMess> sSocket;
+    private String from;
+    public SocketSend(SecSocket<ChatMess> socket) {
+        this.sSocket = socket;
+    }
+    
+    @Override
+    public void run() {
+        
+        Scanner scanner = new Scanner(System.in);
+ 
+        while(!sSocket.isClosed()) {
+            
+            String s = scanner.nextLine();
+            ChatMess chatMess = new ChatMess("txt", s);
+            chatMess.setFrom(from);
+            if (sSocket.isClosed()) {
+                break;
+            }
+            sSocket.writeMsg(chatMess);
+            try {
+                Thread.sleep(500);
+            } catch (InterruptedException e) {
+                // TODO Auto-generated catch block
+                e.printStackTrace();
+            }
+        }
+        scanner.close();
+    
+    }
+    
+}
+    
+    
+

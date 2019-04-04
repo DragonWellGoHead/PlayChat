@@ -1,0 +1,10 @@
+Manifest-Version: 1.0
+Implementation-Title: playChat
+Implementation-Version: 0.0.1-SNAPSHOT
+Built-By: Jack
+Implementation-Vendor-Id: com.godo
+Build-Jdk: 1.8.0_151
+Implementation-URL: https://projects.spring.io/spring-boot/#/spring-bo
+ ot-starter-parent/playChat
+Created-By: Maven Integration for Eclipse
+
